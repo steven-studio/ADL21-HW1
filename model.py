@@ -82,6 +82,43 @@ class SeqClassifier(torch.nn.Module):
 
 
 class SeqTagger(SeqClassifier):
-    def forward(self, batch) -> Dict[str, torch.Tensor]:
-        # TODO: implement model forward
-        raise NotImplementedError
+    def forward(self, batch):
+        """
+        对每个 token 进行分类（序列标注）
+        返回: [B, T, num_class]
+        """
+        # 处理输入（支持 dict 或直接传 tensor）
+        if isinstance(batch, dict):
+            input_ids = batch["input_ids"]
+            lengths = batch.get("lengths", None)
+        else:
+            input_ids = batch
+            lengths = None
+
+        if lengths is None:
+            # 根据 padding 推断长度（假设 pad_id=0）
+            lengths = (input_ids != 0).sum(dim=1)
+
+        # Embedding
+        x = self.embed(input_ids)  # [B, T, E]
+        x = self.drop(x)
+
+        # RNN - 需要所有时间步的输出
+        lengths_cpu = lengths.to("cpu")
+        packed = nn.utils.rnn.pack_padded_sequence(
+            x, lengths_cpu, batch_first=True, enforce_sorted=False
+        )
+        packed_output, _ = self.rnn(packed)
+        
+        # Unpack 得到每个时间步的输出
+        rnn_out, _ = nn.utils.rnn.pad_packed_sequence(
+            packed_output, batch_first=True
+        )
+        # rnn_out: [B, T, hidden_size*2] if bidirectional else [B, T, hidden_size]
+
+        rnn_out = self.drop(rnn_out)
+        
+        # 对每个时间步应用分类层
+        logits = self.fc(rnn_out)  # [B, T, num_class]
+        
+        return logits  # 直接返回 tensor，不是 dict

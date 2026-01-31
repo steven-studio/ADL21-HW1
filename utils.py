@@ -12,6 +12,9 @@ class Vocab:
             **{token: i for i, token in enumerate(vocab, 2)},
         }
 
+    def __len__(self) -> int:
+        return len(self.token2idx)
+
     @property
     def pad_id(self) -> int:
         return self.token2idx[Vocab.PAD]

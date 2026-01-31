@@ -94,6 +94,51 @@ class SeqClsDataset(Dataset):
 class SeqTaggingClsDataset(SeqClsDataset):
     ignore_idx = -100
 
-    def collate_fn(self, samples):
-        # TODO: implement collate_fn
-        raise NotImplementedError
+    def collate_fn(self, samples: List[Dict]) -> Dict:
+        """
+        Collate function for sequence tagging.
+        Expects samples to have 'tokens' (list of str) and 'tags' (list of str).
+        """
+        # Extract tokens and tags
+        batch_tokens = [s["tokens"] for s in samples]
+        has_tags = "tags" in samples[0]
+        if has_tags:
+            batch_tags = [s["tags"] for s in samples]
+        
+        # Get pad_id
+        pad_id = self.vocab.pad_id
+        
+        # Encode tokens
+        token_ids = [self.vocab.encode(tokens) for tokens in batch_tokens]
+        
+        # Find max length
+        lengths = [len(ids) for ids in token_ids]
+        max_len = min(max(lengths), self.max_len) if self.max_len else max(lengths)
+        
+        # Pad tokens
+        padded_tokens = torch.full((len(samples), max_len), pad_id, dtype=torch.long)
+        for i, ids in enumerate(token_ids):
+            seq_len = min(len(ids), max_len)
+            padded_tokens[i, :seq_len] = torch.tensor(ids[:seq_len], dtype=torch.long)
+        
+        batch = {
+            "tokens": padded_tokens,
+            "lengths": torch.tensor(lengths, dtype=torch.long),
+        }
+        
+        # Encode and pad tags if present
+        if has_tags:
+            tag_ids = []
+            for tags in batch_tags:
+                ids = [self.label_mapping.get(tag, self.label_mapping.get(Vocab.UNK, 0)) 
+                       for tag in tags]
+                tag_ids.append(ids)
+            
+            padded_tags = torch.full((len(samples), max_len), self.ignore_idx, dtype=torch.long)
+            for i, ids in enumerate(tag_ids):
+                seq_len = min(len(ids), max_len)
+                padded_tags[i, :seq_len] = torch.tensor(ids[:seq_len], dtype=torch.long)
+            
+            batch["tags"] = padded_tags
+        
+        return batch
