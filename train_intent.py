@@ -66,7 +66,8 @@ def build_dataloaders(
       或者從 dataset 模組 import 對應的 collate_fn。
     """
     # TODO: 如果需要 collate_fn，取消註解並修改
-    # collate_fn = getattr(datasets[TRAIN], "collate_fn", None)
+    collate_fn = getattr(datasets[TRAIN], "collate_fn", None)
+    assert collate_fn is not None, "SeqClsDataset should provide collate_fn"
 
     loaders: Dict[str, DataLoader] = {}
 
@@ -77,7 +78,7 @@ def build_dataloaders(
         drop_last=False,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
-        # collate_fn=collate_fn,
+        collate_fn=collate_fn,
     )
     loaders[DEV] = DataLoader(
         datasets[DEV],
@@ -86,7 +87,7 @@ def build_dataloaders(
         drop_last=False,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
-        # collate_fn=collate_fn,
+        collate_fn=collate_fn,
     )
     return loaders
 
@@ -122,7 +123,7 @@ def evaluate(
         labels    = batch["labels"].to(device)
 
         # TODO: forward 得 logits（shape: [B, C]）
-        logits = model(input_ids, lengths)
+        logits = model(input_ids)["logits"]
 
         # TODO: 取 prediction，更新 correct/total
         pred = logits.argmax(dim=-1)
@@ -160,7 +161,7 @@ def train_one_epoch(
 
         # TODO: forward 得 logits
         # TODO: 算 loss (e.g., CrossEntropyLoss)
-        logits = model(input_ids, lengths)
+        logits = model(input_ids)["logits"]
         loss = criterion(logits, labels)
 
         loss.backward()

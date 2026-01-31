@@ -3,8 +3,10 @@ import pickle
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import Dict
+import csv
 
 import torch
+from torch.utils.data import DataLoader
 
 from dataset import SeqClsDataset
 from model import SeqClassifier
@@ -21,7 +23,13 @@ def main(args):
     data = json.loads(args.test_file.read_text())
     dataset = SeqClsDataset(data, vocab, intent2idx, args.max_len)
     # TODO: crecate DataLoader for test dataset
-
+    loader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=dataset.collate_fn,
+    )
+    
     embeddings = torch.load(args.cache_dir / "embeddings.pt")
 
     model = SeqClassifier(
@@ -36,11 +44,30 @@ def main(args):
 
     ckpt = torch.load(args.ckpt_path)
     # load weights into model
+    model.load_state_dict(ckpt)
+    model.to(args.device)
 
     # TODO: predict dataset
+    rows = []
 
+    with torch.no_grad():
+        for batch in loader:
+            input_ids = batch["input_ids"].to(args.device)
+            ids = batch["ids"]
+
+            outputs = model(input_ids)
+            logits = outputs["logits"]
+            preds = logits.argmax(dim=-1).cpu().tolist()
+
+            for i, p in zip(ids, preds):
+                intent = dataset.idx2label(p)
+                rows.append((i, intent))
+        
     # TODO: write prediction to file (args.pred_file)
-
+    with open(args.pred_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "intent"])
+        writer.writerows(rows)
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
